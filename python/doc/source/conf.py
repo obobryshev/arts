@@ -156,6 +156,9 @@ html_theme = 'sphinx_rtd_theme'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+html_css_files = [
+        'custom.css',
+]
 
 # Add any extra paths that contain custom files (such as robots.txt or
 # .htaccess) here, relative to this directory. These files are copied
@@ -309,11 +312,11 @@ autosummary_generate = True
 # -- Intersphinx configuration -------------------------------------------
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3.6', None),
-    'scipy': ('https://docs.scipy.org/doc/scipy/reference', None),
+    'scipy': ('https://docs.scipy.org/doc/scipy/', None),
     'skimage': ('https://scikit-image.org/docs/stable/', None),
     'numpy': ('https://numpy.org/doc/stable/', None),
-    'matplotlib': ('https://matplotlib.org', None),
-    'xarray': ('http://xarray.pydata.org/en/stable/', None),
+    'matplotlib': ('https://matplotlib.org/stable/', None),
+    'xarray': ('https://xarray.pydata.org/en/stable/', None),
 }
 
 # -- Plots ----------------------------------------------------------------

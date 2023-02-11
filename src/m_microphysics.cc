@@ -3,7 +3,7 @@
    Daniel Kreyling  <daniel.kreyling@nict.go.jp>
    Manfred Brath    <manfred.brath@uni-hamburg.de>
    Patrick Eriksson <patrick.eriksson@chalmers.se>
-                         
+
    This program is free software; you can redistribute it and/or modify it
    under the terms of the GNU General Public License as published by the
    Free Software Foundation; either version 2, or (at your option) any
@@ -20,13 +20,13 @@
    USA. */
 
 /*===========================================================================
-  === File description 
+  === File description
   ===========================================================================*/
 
 /*!
   \file   m_microphysics.cc
   \author Jana Mendrok, Daniel Kreyling, Manfred Brath, Patrick Eriksson
-  \date   2017-07-10 
+  \date   2017-07-10
 
   \brief  Workspace functions related to particle micophysics (e.g. size
           distributions).
@@ -43,9 +43,11 @@
 
 #include "array.h"
 #include "arts.h"
+#include "arts_constants.h"
 #include "auto_md.h"
 #include "check_input.h"
 #include "cloudbox.h"
+#include "disort.h"
 #include "file.h"
 #include "interpolation.h"
 #include "lin_alg.h"
@@ -62,9 +64,117 @@
 #include "special_interp.h"
 #include "xml_io.h"
 
+inline constexpr Numeric PI=Constant::pi;
+
 /*===========================================================================
   === The functions (in alphabetical order)
   ===========================================================================*/
+
+/* Workspace method: Doxygen documentation will be auto-generated */
+void HydrotableCalc(Workspace& ws,
+                    GriddedField4& hydrotable,
+                    const ArrayOfAgenda& pnd_agenda_array,
+                    const ArrayOfArrayOfString& pnd_agenda_array_input_names,
+                    const ArrayOfArrayOfSingleScatteringData& scat_data,
+                    const Index& scat_data_checked,
+                    const Vector& f_grid,
+                    const Index& iss,
+                    const Vector& T_grid,
+                    const Vector& wc_grid,                    
+                    const Verbosity&)
+{
+  // Sizes
+  const Index nss = scat_data.nelem(); 
+  const Index nf = f_grid.nelem();
+  const Index nt = T_grid.nelem();
+  const Index nw = wc_grid.nelem();
+
+  ARTS_USER_ERROR_IF (pnd_agenda_array.nelem() != nss,
+        "*scat_data* and *pnd_agenda_array* are inconsistent "
+        "in size.");
+  ARTS_USER_ERROR_IF (pnd_agenda_array_input_names.nelem() != nss,
+        "*scat_data* and *pnd_agenda_array_input_names* are "
+        "inconsistent in size.");
+  ARTS_USER_ERROR_IF (pnd_agenda_array_input_names[iss].nelem() != 1,
+        "This method requires one-moment PSDs, but *pnd_agenda_array_input_names* "
+        "for the selected scattering species does not have length one.");
+  ARTS_USER_ERROR_IF (!scat_data_checked,
+                      "The scat_data must be flagged to have passed a "
+                      "consistency check (scat_data_checked=1).");
+
+  // Allocate *hydrotable*
+  hydrotable.set_name("Table of particle optical properties");
+  hydrotable.data.resize(4, nf, nt, nw);
+  //
+  hydrotable.set_grid_name(0, "Quantity");
+  hydrotable.set_grid(0, {"Extinction [m-1]",
+                          "Single scattering albedo [-]",
+                          "Asymmetry parameter [-]",
+                          "Radar reflectivity [m2]"});
+  hydrotable.set_grid_name(1, "Frequency [Hz]");
+  hydrotable.set_grid(1, f_grid);
+  hydrotable.set_grid_name(2, "Temperature [K]");
+  hydrotable.set_grid(2, T_grid);
+  hydrotable.set_grid_name(3, "Particle content [kg/m3]");
+  hydrotable.set_grid(3, wc_grid);
+
+  // Scattering angle grid
+  const Index nsa = 361;
+  Vector sa_grid;
+  nlinspace(sa_grid, 0, 180, nsa);
+
+  // Local variables
+  Matrix pnd_data;
+  Tensor3 dpnd_data_dx;
+  Matrix pnd_agenda_input(nt, 1);
+  ArrayOfString dpnd_data_dx_names(0);
+  Matrix ext(nf, nt);
+  Matrix abs(nf, nt);
+  Tensor3 pfun(nf, nt, nsa);
+  const Numeric fourpi = 4.0 * PI;
+  ArrayOfIndex cbox_limits = {0, nt-1};
+  
+  // Loop and fill table
+  for (Index iw = 0; iw < nw; iw++) {
+    // Call pnd_agenda
+    pnd_agenda_input = wc_grid[iw];
+    pnd_agenda_arrayExecute(ws,
+                            pnd_data,
+                            dpnd_data_dx,
+                            iss,
+                            T_grid,
+                            pnd_agenda_input,
+                            pnd_agenda_array_input_names[iss],
+                            dpnd_data_dx_names,
+                            pnd_agenda_array);
+
+    // Calculate extinsion, absorbtion and phase function
+    ext = 0.0;
+    abs = 0.0;
+    pfun = 0.0;
+    ext_abs_pfun_from_tro(ext,
+                          abs,
+                          pfun,
+                          scat_data[iss],
+                          iss,
+                          transpose(pnd_data),
+                          cbox_limits,
+                          T_grid,
+                          sa_grid);
+    
+    // Fill the hydrotable for present particle content
+    for (Index iv = 0; iv < nf; iv++) {
+      for (Index it = 0; it < nt; it++) {
+        hydrotable.data(0,iv,it,iw) = ext(iv,it);
+        hydrotable.data(1,iv,it,iw) = 1.0 - (abs(iv,it) / ext(iv,it));
+        hydrotable.data(2,iv,it,iw) = asymmetry_parameter(sa_grid,
+                                                          pfun(iv,it,joker));
+        hydrotable.data(3,iv,it,iw) = fourpi * pfun(iv,it,nsa-1);
+      }
+    }
+  }
+}
+
 
 /* Workspace method: Doxygen documentation will be auto-generated */
 void particle_massesFromMetaDataSingleCategory(
@@ -110,7 +220,7 @@ void particle_massesFromMetaData(  //WS Output:
           "A presumably incorrect value found for "
           "scat_meta[", i_ss, "][", i_se, "].mass.\n"
           "The value is ", scat_meta[i_ss][i_se].mass)
-      
+
       particle_masses(i_se_flat, i_ss) = scat_meta[i_ss][i_se].mass;
       i_se_flat++;
     }
@@ -351,7 +461,7 @@ void pndFromPsd(Matrix& pnd_data,
       ext_l0 = ext;
 
     for (Index ip = 0; ip < np; ip++)  //loop over pressure levels
-      if (abs(pnd_data(ip, joker).sum()) > 0.)
+      if (abs(sum(pnd_data(ip, joker))) > 0.)
         for (Index f = fstart; f < (fstart + nf); f++)
           bulkext(ip, f) += pnd_data(ip, intarr[ise]) * ext[f];
   }
@@ -366,7 +476,7 @@ void pndFromPsd(Matrix& pnd_data,
   Numeric contrib;
   for (Index ip = 0; ip < np; ip++)  //loop over pressure levels
   {
-    if (abs(pnd_data(ip, joker).sum()) > 0.) {
+    if (abs(sum(pnd_data(ip, joker))) > 0.) {
       for (Index f = fstart; f < (fstart + nf); f++) {
         /*        for( Index ise=0; ise<ng; ise++ )
         {
@@ -483,7 +593,7 @@ void pnd_fieldCalcFromParticleBulkProps(
     const Index& jacobian_do,
     const ArrayOfRetrievalQuantity& jacobian_quantities,
     const Verbosity&) {
-  
+
   // Do nothing if cloudbox is inactive
   if (!cloudbox_on) {
     return;
@@ -602,7 +712,7 @@ void pnd_fieldCalcFromParticleBulkProps(
   // Allocate output variables
   //
   pnd_field.resize(ncumse[nss], np, nlat, nlon);
-  pnd_field = 0.0;  
+  pnd_field = 0.0;
   //
   // Help variables for partial derivatives
   Index nq = 0;
@@ -625,7 +735,7 @@ void pnd_fieldCalcFromParticleBulkProps(
             "\nbut this species could not be found in *scat_species*.")
         scatspecies_to_jq[ihit].push_back(iq);
         dpnd_field_dx[iq].resize(ncumse[nss], np, nlat, nlon);
-        dpnd_field_dx[iq] = 0.0;  
+        dpnd_field_dx[iq] = 0.0;
       }
     }
   }
@@ -820,8 +930,7 @@ void ScatSpeciesSizeMassInfo(Vector& scat_species_x,
   }
 
   else {
-    ARTS_USER_ERROR ("You have selected the x_unit: ", x_unit,
-                     "while accepted choices are: \"dveq\", \"dmax\", \"mass\" and \"area\"")
+    ARTS_USER_ERROR ("You have selected the x_unit: ", x_unit, "\nwhile accepted "
+                     "choices are: \"dveq\", \"dmax\", \"mass\" and \"area\"")
   }
 }
-

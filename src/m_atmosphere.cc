@@ -39,6 +39,8 @@
 
 #include <cfloat>
 #include <cmath>
+#include "arts_constants.h"
+#include "arts_conversions.h"
 #include "species_tags.h"
 #include "absorption.h"
 #include "agenda_class.h"
@@ -53,27 +55,27 @@
 #include "interpolation.h"
 #include "interpolation_lagrange.h"
 #include "linescaling.h"
-#include "matpackIII.h"
+#include "matpack_data.h"
 #include "messages.h"
 #include "rte.h"
 #include "special_interp.h"
 #include "xml_io.h"
 
-extern const Index GFIELD3_P_GRID;
-extern const Index GFIELD3_LAT_GRID;
-extern const Index GFIELD3_LON_GRID;
-extern const Index GFIELD4_FIELD_NAMES;
-extern const Index GFIELD4_P_GRID;
-extern const Index GFIELD4_LAT_GRID;
-extern const Index GFIELD4_LON_GRID;
+using GriddedFieldGrids::GFIELD3_P_GRID;
+using GriddedFieldGrids::GFIELD3_LAT_GRID;
+using GriddedFieldGrids::GFIELD3_LON_GRID;
+using GriddedFieldGrids::GFIELD4_FIELD_NAMES;
+using GriddedFieldGrids::GFIELD4_P_GRID;
+using GriddedFieldGrids::GFIELD4_LAT_GRID;
+using GriddedFieldGrids::GFIELD4_LON_GRID;
 
 
-extern const Numeric GAS_CONSTANT;
+inline constexpr Numeric GAS_CONSTANT=Constant::ideal_gas_constant;
 
 //! Data value accuracy requirement for values at 0 and 360 deg if longitudes are cyclic
 /*!
  */
-extern const Numeric EPSILON_LON_CYCLIC = 2 * DBL_EPSILON;
+inline constexpr Numeric EPSILON_LON_CYCLIC = 2 * DBL_EPSILON;
 
 /*===========================================================================
  *=== Helper functions
@@ -641,7 +643,7 @@ void GriddedFieldPRegridHelper(Index& ing_min,
   const Vector& in_p_grid = gfraw_in.get_numeric_grid(p_grid_index);
 
   // Initialize output field. Set grids and copy grid names
-  gfraw_out.set_grid(p_grid_index, p_grid);
+  gfraw_out.set_grid(p_grid_index, Vector{p_grid});
   gfraw_out.set_grid_name(p_grid_index, gfraw_in.get_grid_name(p_grid_index));
 
   if (zeropadding) {
@@ -890,10 +892,10 @@ void GriddedFieldLatLonRegridHelper(ArrayOfLagrangeInterpolation& lag_lat,
   const Vector& in_lon_grid = gfraw_in.get_numeric_grid(lon_grid_index);
 
   // Initialize output field. Set grids and copy grid names
-  gfraw_out.set_grid(lat_grid_index, lat_true);
+  gfraw_out.set_grid(lat_grid_index, Vector{lat_true});
   gfraw_out.set_grid_name(lat_grid_index,
                           gfraw_in.get_grid_name(lat_grid_index));
-  gfraw_out.set_grid(lon_grid_index, lon_true);
+  gfraw_out.set_grid(lon_grid_index, Vector{lon_true});
   gfraw_out.set_grid_name(lon_grid_index,
                           gfraw_in.get_grid_name(lon_grid_index));
 
@@ -1340,7 +1342,7 @@ void GriddedFieldZToPRegrid(   // WS Generic Output:
 
   for (Index lat_index = 0; lat_index < lat_grid.nelem(); lat_index++) {
     for (Index lon_index = 0; lon_index < lon_grid.nelem(); lon_index++) {
-      const Vector z_out = z_field(joker, lat_index, lon_index);
+      const Vector z_out{z_field(joker, lat_index, lon_index)};
 
       GriddedFieldZToPRegridHelper(ing_min,
                                    ing_max,
@@ -1420,7 +1422,7 @@ void atm_fields_compactFromMatrix(  // WS Output:
 
   af.set_grid(GFIELD4_FIELD_NAMES, field_names_1);
 
-  af.set_grid(GFIELD4_P_GRID, im(Range(joker), 0));
+  af.set_grid(GFIELD4_P_GRID, Vector{im(Range(joker), 0)});
 
   af.set_grid(GFIELD4_LAT_GRID, Vector());
   af.set_grid(GFIELD4_LON_GRID, Vector());
@@ -1598,9 +1600,9 @@ void atm_fields_compactCreateFromField(  // WS Output:
   sp_name_grid[0] = name;
 
   atm_fields_compact.set_grid(0, sp_name_grid);
-  atm_fields_compact.set_grid(1, sp_p_grid);
-  atm_fields_compact.set_grid(2, sp_lat_grid);
-  atm_fields_compact.set_grid(3, sp_lon_grid);
+  atm_fields_compact.set_grid(1, Vector{sp_p_grid});
+  atm_fields_compact.set_grid(2, Vector{sp_lat_grid});
+  atm_fields_compact.set_grid(3, Vector{sp_lon_grid});
 
   atm_fields_compact.data.resize(
       1, sp_p_grid.nelem(), sp_lat_grid.nelem(), sp_lon_grid.nelem());
@@ -2017,9 +2019,9 @@ void AtmFieldsCalc(  //WS Output:
   chk_atm_grids(atmosphere_dim, p_grid, lat_grid, lon_grid);
   
   // NLTE basics
-  nlte_field.Type() = nlte_ids.nelem() == nlte_field_raw.nelem() ? EnergyLevelMapType::Tensor3_t : EnergyLevelMapType::None_t;
-  nlte_field.Levels() = nlte_ids.nelem() == nlte_field_raw.nelem() ? nlte_ids : ArrayOfQuantumIdentifier(0);
-  nlte_field.Energies() = nlte_ids.nelem() == nlte_field_raw.nelem() ? nlte_energies : Vector(0);
+  nlte_field.type = nlte_ids.nelem() == nlte_field_raw.nelem() ? EnergyLevelMapType::Tensor3_t : EnergyLevelMapType::None_t;
+  nlte_field.levels = nlte_ids.nelem() == nlte_field_raw.nelem() ? nlte_ids : ArrayOfQuantumIdentifier(0);
+  nlte_field.vib_energy = nlte_ids.nelem() == nlte_field_raw.nelem() ? nlte_energies : Vector(0);
 
   //==========================================================================
   if (atmosphere_dim == 1) {
@@ -2063,10 +2065,10 @@ void AtmFieldsCalc(  //WS Output:
       GriddedFieldPRegrid(
           temp_agfield3, p_grid, nlte_field_raw, interp_order, 0, verbosity);
       FieldFromGriddedField(
-        nlte_field.Data(), p_grid, lat_grid, lon_grid, temp_agfield3, verbosity);
+        nlte_field.value, p_grid, lat_grid, lon_grid, temp_agfield3, verbosity);
     }
     else
-      nlte_field.Data().resize(0, 0, 0, 0);
+      nlte_field.value.resize(0, 0, 0, 0);
 
   }
 
@@ -2083,10 +2085,10 @@ void AtmFieldsCalc(  //WS Output:
     vmr_field.resize(
         vmr_field_raw.nelem(), p_grid.nelem(), lat_grid.nelem(), 1);
     if (nlte_ids.nelem() == nlte_field_raw.nelem())
-      nlte_field.Data().resize(
+      nlte_field.value.resize(
         nlte_field_raw.nelem(), p_grid.nelem(), lat_grid.nelem(), 1);
     else
-      nlte_field.Data().resize(0, 0, 0, 0);
+      nlte_field.value.resize(0, 0, 0, 0);
 
     // Interpolate t_field:
 
@@ -2195,13 +2197,13 @@ void AtmFieldsCalc(  //WS Output:
 
       // Interpolate:
       if (nlte_ids.nelem() == nlte_field_raw.nelem())
-        reinterp(nlte_field.Data()(qi_i, joker, joker, 0),
+        reinterp(nlte_field.value(qi_i, joker, joker, 0),
                  nlte_field_raw[qi_i].data(joker, joker, 0),
                  itw,
                  lag_p,
                  lag_lat);
       else
-        nlte_field.Data().resize(0, 0, 0, 0);
+        nlte_field.value.resize(0, 0, 0, 0);
     }
   }
 
@@ -2268,9 +2270,9 @@ void AtmFieldsCalc(  //WS Output:
       
       if (nlte_ids.nelem() == nlte_field_raw.nelem())
         FieldFromGriddedField(
-          nlte_field.Data(), p_grid, lat_grid, lon_grid, temp_agfield3, verbosity);
+          nlte_field.value, p_grid, lat_grid, lon_grid, temp_agfield3, verbosity);
       else
-        nlte_field.Data().resize(0, 0, 0, 0);
+        nlte_field.value.resize(0, 0, 0, 0);
     }
   } else {
     // We can never get here, since there was a runtime
@@ -2296,13 +2298,13 @@ void AtmFieldsCalc(  //WS Output:
   // what to do with negative nlte temperatures?
   if (nlte_when_negative != -1) {
     if (nlte_field_raw.nelem()) {
-      for (Index ib = 0; ib < nlte_field.Data().nbooks(); ib++) {
-        for (Index ip = 0; ip < nlte_field.Data().npages(); ip++) {
-          for (Index ir = 0; ir < nlte_field.Data().nrows(); ir++) {
-            for (Index ic = 0; ic < nlte_field.Data().ncols(); ic++) {
-              if (nlte_field.Data()(ib, ip, ir, ic) < 0) {
+      for (Index ib = 0; ib < nlte_field.value.nbooks(); ib++) {
+        for (Index ip = 0; ip < nlte_field.value.npages(); ip++) {
+          for (Index ir = 0; ir < nlte_field.value.nrows(); ir++) {
+            for (Index ic = 0; ic < nlte_field.value.ncols(); ic++) {
+              if (nlte_field.value(ib, ip, ir, ic) < 0) {
                 // Set to atmospheric temperature or to nil.
-                nlte_field.Data()(ib, ip, ir, ic) =
+                nlte_field.value(ib, ip, ir, ic) =
                     nlte_when_negative == 1 ? t_field(ip, ir, ic) : 0;
                 // NOTE: This only makes sense for vibrational NLTE and is bad elsewise
                 //       but since elsewise is bad anyways with negative values, it is 
@@ -2905,10 +2907,10 @@ void AtmFieldsCalcExpand1D(Tensor3& t_field,
   z_field.resize(np, nlat, nlon);
   vmr_field.resize(nspecies, np, nlat, nlon);
   if (nlte_field_raw.nelem()) {
-    nlte_field.Type() = EnergyLevelMapType::Tensor3_t;
-    nlte_field.Data().resize(nlte_field_raw.nelem(), np, nlat, nlon);
-    nlte_field.Levels() = nlte_ids;
-    nlte_field.Energies() = nlte_energies;
+    nlte_field.type = EnergyLevelMapType::Tensor3_t;
+    nlte_field.value.resize(nlte_field_raw.nelem(), np, nlat, nlon);
+    nlte_field.levels = nlte_ids;
+    nlte_field.vib_energy = nlte_energies;
   }
   else
     nlte_field = EnergyLevelMap();
@@ -2922,7 +2924,7 @@ void AtmFieldsCalcExpand1D(Tensor3& t_field,
           vmr_field(is, ip, ilat, ilon) = vmr_temp(is, ip, 0, 0);
         }
         for (Index is = 0; is < nlte_field_raw.nelem(); is++) {
-          nlte_field.Data()(is, ip, ilat, ilon) = nlte_temp.Data()(is, ip, 0, 0);
+          nlte_field.value(is, ip, ilat, ilon) = nlte_temp.value(is, ip, 0, 0);
         }
       }
     }
@@ -3675,10 +3677,9 @@ void p_gridFromZRaw(  //WS Output
     if (no_negZ) {
       while (z_field_raw.data(i, 0, 0) < 0.0) i--;
     }
-    p_grid = p_grid_raw[Range(i, joker, -1)];
+    p_grid = reverse(p_grid_raw);
   } else {
-    ARTS_USER_ERROR (
-                        "z_field_raw needs to be monotonous, but this is not the case.\n")
+    ARTS_USER_ERROR ("z_field_raw needs to be monotonous, but this is not the case.\n")
   }
 }
 
@@ -3762,10 +3763,10 @@ void wind_u_fieldIncludePlanetRotation(Tensor3& wind_u_field,
     wind_u_field = 0.;
   }
 
-  const Numeric k1 = 2 * PI / planet_rotation_period;
+  const Numeric k1 = 2 * Constant::pi / planet_rotation_period;
 
   for (Index a = 0; a < na; a++) {
-    const Numeric k2 = k1 * cos(DEG2RAD * lat_grid[a]);
+    const Numeric k2 = k1 * Conversion::cosd(lat_grid[a]);
     const Numeric re = refell2r(refellipsoid, lat_grid[a]);
 
     for (Index o = 0; o < no; o++) {
@@ -3990,8 +3991,41 @@ void vmr_fieldSetAllConstant(Tensor4& vmr_field,
   }
 }
 
+
 /* Workspace method: Doxygen documentation will be auto-generated */
-void nlte_fieldSetLteExternalPartitionFunction(
+void vmr_fieldSetRh(Workspace& ws,
+                    Tensor4& vmr_field,
+                    const ArrayOfArrayOfSpeciesTag& abs_species,
+                    const Tensor3& t_field,
+                    const Vector& p_grid,
+                    const Agenda& water_p_eq_agenda,
+                    const Numeric& rh,
+                    const Numeric& vmr_threshold,
+                    const Verbosity&)
+{
+  // Locate H2O
+  const Index ih2o = find_first_species(abs_species, Species::fromShortName("H2O"));
+  ARTS_USER_ERROR_IF (ih2o < 0, "There is no H2O species in *abs_species*.")
+
+  // Calculate partial pressure matching selected RH
+  Tensor3 p_rh;
+  water_p_eq_agendaExecute(ws, p_rh, t_field, water_p_eq_agenda);
+  p_rh *= rh;
+
+  // Put in VMR
+  for (Index p=0; p<vmr_field.npages(); ++p) {
+    for (Index a=0; a<vmr_field.nrows(); ++a) {
+      for (Index o=0; o<vmr_field.ncols(); ++o) {
+        if (vmr_field(ih2o, p, a, o) > vmr_threshold) {
+          vmr_field(ih2o, p, a, o) = p_rh(p, a, o) / p_grid[p];
+        }
+      }
+    }
+  }
+}
+
+/* Workspace method: Doxygen documentation will be auto-generated */
+void nlte_fieldLteExternalPartitionFunction(
     Index& nlte_do,
     EnergyLevelMap& nlte_field,
     ArrayOfArrayOfAbsorptionLines& abs_lines_per_species,
@@ -4069,7 +4103,7 @@ void nlte_fieldSetLteExternalPartitionFunction(
 }
 
 /* Workspace method: Doxygen documentation will be auto-generated */
-void nlte_fieldSetLteInternalPartitionFunction(
+void nlte_fieldLteInternalPartitionFunction(
     Index& nlte_do,
     EnergyLevelMap& nlte_field,
     ArrayOfArrayOfAbsorptionLines& abs_lines_per_species,

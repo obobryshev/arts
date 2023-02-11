@@ -34,7 +34,7 @@
 #define optproperties_h
 
 #include "gridded_fields.h"
-#include "matpackVII.h"
+#include "matpack_data.h"
 #include "messages.h"
 #include "mystring.h"
 #include "propagationmatrix.h"
@@ -86,13 +86,12 @@ struct SingleScatteringData {
   Tensor7 pha_mat_data;
   Tensor5 ext_mat_data;
   Tensor5 abs_vec_data;
+
+  friend ostream& operator<<(ostream& os, const SingleScatteringData& ssd);
 };
 
 typedef Array<SingleScatteringData> ArrayOfSingleScatteringData;
 typedef Array<Array<SingleScatteringData> > ArrayOfArrayOfSingleScatteringData;
-
-ostream& operator<<(ostream& os, const SingleScatteringData& ssd);
-ostream& operator<<(ostream& os, const ArrayOfSingleScatteringData& assd);
 
 /*===========================================================================
   === The ScatteringMetaData structure
@@ -113,13 +112,12 @@ struct ScatteringMetaData {
   Numeric diameter_max;
   Numeric diameter_volume_equ;
   Numeric diameter_area_equ_aerodynamical;
+
+  friend ostream& operator<<(ostream& os, const ScatteringMetaData& ssd);
 };
 
 typedef Array<ScatteringMetaData> ArrayOfScatteringMetaData;
 typedef Array<Array<ScatteringMetaData> > ArrayOfArrayOfScatteringMetaData;
-
-ostream& operator<<(ostream& os, const ScatteringMetaData& ssd);
-ostream& operator<<(ostream& os, const ArrayOfScatteringMetaData& assd);
 
 // General functions:
 // =============================================================
@@ -224,19 +222,6 @@ void pha_mat_1ScatElem(  //Output
     const Index& f_start,
     const Index& t_interp_order = 1);
 
-void FouComp_1ScatElem(  //Output
-    Tensor7View pha_mat_fou,
-    Index& ptype,
-    VectorView t_ok,
-    //Input
-    const SingleScatteringData& ssd,
-    const Vector& T_array,
-    const Vector& pdir_array,
-    const Vector& idir_array,
-    const Index& f_start,
-    const Index& t_interp_order,
-    const Index& naa_totran);
-
 void abs_vecTransform(  //Output and Input
     StokesVector& abs_vec_lab,
     //Input
@@ -326,5 +311,15 @@ ParticleSSDMethod ParticleSSDMethodFromString(
 
 String ParticleSSDMethodToString(
     const ParticleSSDMethod& particle_ssdmethod_type);
+
+void ext_abs_pfun_from_tro(MatrixView ext_data,
+                           MatrixView abs_data,
+                           Tensor3View pfun_data,
+                           const ArrayOfSingleScatteringData& scat_data,
+                           const Index& iss,
+                           ConstMatrixView pnd_data,
+                           ArrayOfIndex& cloudbox_limits,
+                           ConstVectorView T_grid,
+                           ConstVectorView sa_grid);
 
 #endif  //optproperties_h

@@ -38,14 +38,14 @@
 
 #include "agenda_class.h"
 #include "arts.h"
-#include "auto_md.h"
 #include "jacobian.h"
-#include "matpackI.h"
-#include "matpackII.h"
-#include "matpackIII.h"
+#include "matpack_data.h"
 #include "matpack_complex.h"
 #include "optproperties.h"
 #include "ppath.h"
+
+
+class Workspace;
 
 /*===========================================================================
   === Functions in rte.cc
@@ -674,10 +674,9 @@ void iyb_calc(Workspace& ws,
               const ConstMatrixView& sensor_pos,
               const ConstMatrixView& sensor_los,
               const ConstMatrixView& transmitter_pos,
-              const ConstMatrixView& mblock_dlos_grid,
+              const ConstMatrixView& mblock_dlos,
               const String& iy_unit,
               const Agenda& iy_main_agenda,
-              const Agenda& geo_pos_agenda,
               const Index& j_analytical_do,
               const ArrayOfRetrievalQuantity& jacobian_quantities,
               const ArrayOfArrayOfIndex& jacobian_indices,
@@ -925,14 +924,13 @@ void yCalc_mblock_loop_body(bool& failed,
                             const Matrix& sensor_pos,
                             const Matrix& sensor_los,
                             const Matrix& transmitter_pos,
-                            const Matrix& mblock_dlos_grid,
+                            const Matrix& mblock_dlos,
                             const Sparse& sensor_response,
                             const Vector& sensor_response_f,
                             const ArrayOfIndex& sensor_response_pol,
                             const Matrix& sensor_response_dlos,
                             const String& iy_unit,
                             const Agenda& iy_main_agenda,
-                            const Agenda& geo_pos_agenda,
                             const Agenda& jacobian_agenda,
                             const Index& jacobian_do,
                             const ArrayOfRetrievalQuantity& jacobian_quantities,

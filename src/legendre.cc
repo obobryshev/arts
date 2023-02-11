@@ -33,7 +33,7 @@
 #include <numeric>
 #include <sstream>
 
-#include "constants.h"
+#include "arts_conversions.h"
 #include "exceptions.h"
 #include "legendre.h"
 #include "math_funcs.h"
@@ -1960,8 +1960,8 @@ bool gsl_integration_glfixed_table_alloc(Vector &x, Vector &w, Index n) {
   /* Use a predefined table of size n if possible */
   for (auto &&g : glaw) {
     if (n == (Index)g.n) {
-      memcpy(x.get_c_array(), g.x, sizeof(Numeric) * m);
-      memcpy(w.get_c_array(), g.w, sizeof(Numeric) * m);
+      memcpy(x.data_handle(), g.x, sizeof(Numeric) * m);
+      memcpy(w.data_handle(), g.w, sizeof(Numeric) * m);
       precomputed = true;
       break;
     }
@@ -1970,8 +1970,8 @@ bool gsl_integration_glfixed_table_alloc(Vector &x, Vector &w, Index n) {
   /* No predefined table is available.  Generate one on the fly. */
   if (!precomputed) {
     gauss_legendre_tbl(n,
-                       x.get_c_array(),
-                       w.get_c_array(),
+                       x.data_handle(),
+                       w.data_handle(),
                        1e-10 /* precision magic number */);
   }
 
@@ -2025,7 +2025,7 @@ std::pair<Matrix, Matrix> schmidt(const Numeric theta, const Index nmax) ARTS_NO
   ARTS_ASSERT(nmax > 0)
 
   using std::sqrt;
-  using Constant::pow2;
+  using Math::pow2;
 
   Index N = 1 + nmax;
 
@@ -2201,9 +2201,9 @@ MatrixOfSphericalField schmidt_fieldcalc(const Matrix& g, const Matrix& h, const
 
 //! Computes the altitude, latitude and longitude in relation to the ellopsiod using non-iterative method
 std::array<Numeric, 3> to_geodetic(const std::array<Numeric, 3> xyz, const std::array<Numeric, 2> ell) noexcept {
-  using Constant::pow2;
-  using Constant::pow3;
-  using Constant::pow4;
+  using Math::pow2;
+  using Math::pow3;
+  using Math::pow4;
 
   const Numeric X = std::get<0>(xyz);
   const Numeric Y = std::get<1>(xyz);

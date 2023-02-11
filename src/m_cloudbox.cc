@@ -41,10 +41,13 @@
   ===========================================================================*/
 #include <cmath>
 #include <cstdlib>
+#include <memory>
 #include <stdexcept>
 
 #include "array.h"
 #include "arts.h"
+#include "arts_constants.h"
+#include "arts_conversions.h"
 #include "auto_md.h"
 #include "check_input.h"
 #include "cloudbox.h"
@@ -65,21 +68,22 @@
 #include "special_interp.h"
 #include "xml_io.h"
 
-extern const Index GFIELD3_P_GRID;
-extern const Index GFIELD3_LAT_GRID;
-extern const Index GFIELD3_LON_GRID;
-extern const Numeric PI;
-extern const Numeric DEG2RAD;
-extern const Numeric RAD2DEG;
-extern const Numeric LAT_LON_MIN;
-extern const Numeric DENSITY_OF_ICE;
+using GriddedFieldGrids::GFIELD3_P_GRID;
+using GriddedFieldGrids::GFIELD3_LAT_GRID;
+using GriddedFieldGrids::GFIELD3_LON_GRID;
+inline constexpr Numeric PI=Constant::pi;
+inline constexpr Numeric DEG2RAD=Conversion::deg2rad(1);
+inline constexpr Numeric RAD2DEG=Conversion::rad2deg(1);
+using Cloudbox::LAT_LON_MIN;
+inline constexpr Numeric DENSITY_OF_ICE=Constant::density_of_ice_at_0c;
 
 /*===========================================================================
   === The functions (in alphabetical order)
   ===========================================================================*/
 
 /* Workspace method: Doxygen documentation will be auto-generated */
-void cloudboxOff(Index& cloudbox_on,
+void cloudboxOff(Workspace& ws,
+                 Index& cloudbox_on,
                  Index& ppath_inside_cloudbox_do,
                  ArrayOfIndex& cloudbox_limits,
                  Agenda& iy_cloudbox_agenda,
@@ -95,7 +99,7 @@ void cloudboxOff(Index& cloudbox_on,
   cloudbox_on = 0;
   ppath_inside_cloudbox_do = 0;
   cloudbox_limits.resize(0);
-  iy_cloudbox_agenda = Agenda();
+  iy_cloudbox_agenda = Agenda{ws};
   iy_cloudbox_agenda.set_name("iy_cloudbox_agenda");
   pnd_field.resize(0, 0, 0, 0);
   // we need to size dpnd_field to be consistent with jacobian_quantities.
@@ -168,7 +172,7 @@ void cloudboxSetAutomatically(  // WS Output:
       //is unequal zero (and not NaN), i.e. if we actually have some amount of
       //these scattering species in the atmosphere.
       chk_scat_species_field(one_not_empty,
-                             particle_field(l, joker, joker, joker),
+                             Tensor3{particle_field(l, joker, joker, joker)},
                              "particle_field",
                              atmosphere_dim,
                              p_grid,
@@ -180,7 +184,7 @@ void cloudboxSetAutomatically(  // WS Output:
         any_not_empty = true;
         find_cloudlimits(p1,
                          p2,
-                         particle_field(l, joker, joker, joker),
+                         Tensor3{particle_field(l, joker, joker, joker)},
                          atmosphere_dim,
                          cloudbox_margin);
       }
@@ -255,6 +259,7 @@ void cloudboxSetAutomatically(  // WS Output:
   }
 }
 
+
 /* Workspace method: Doxygen documentation will be auto-generated */
 void cloudboxSetFullAtm(  //WS Output
     Index& cloudbox_on,
@@ -264,6 +269,7 @@ void cloudboxSetFullAtm(  //WS Output
     const Vector& p_grid,
     const Vector& lat_grid,
     const Vector& lon_grid,
+    const Index& fullfull,
     const Verbosity&) {
   cloudbox_on = 1;
   cloudbox_limits.resize(2 * atmosphere_dim);
@@ -272,59 +278,68 @@ void cloudboxSetFullAtm(  //WS Output
   cloudbox_limits[1] = p_grid.nelem() - 1;
 
   if (atmosphere_dim > 1) {
-    Index last_lat = lat_grid.nelem() - 1;
+    if (fullfull) {
+      cloudbox_limits[2] = 0;
+      cloudbox_limits[3] = lat_grid.nelem() - 1;
+    } else {
+      Index last_lat = lat_grid.nelem() - 1;
 
-    // find minimum lat_grid point i with lat_grid[i]-lat_grid[0]>=LAT_LON_MIN
-    Index i = 1;
-    while ((i < last_lat - 1) && (lat_grid[i] - lat_grid[0] < LAT_LON_MIN)) i++;
-    ARTS_USER_ERROR_IF (i == last_lat - 1,
+      // find minimum lat_grid point i with lat_grid[i]-lat_grid[0]>=LAT_LON_MIN
+      Index i = 1;
+      while ((i < last_lat - 1) && (lat_grid[i] - lat_grid[0] < LAT_LON_MIN)) i++;
+      ARTS_USER_ERROR_IF (i == last_lat - 1,
         "Can not define lower latitude edge of cloudbox:\n"
         "Extend of atmosphere too small. Distance to minimum latitude\n"
         "has to be at least ", LAT_LON_MIN, "deg, but only ",
         lat_grid[i - 1] - lat_grid[0], " available here.")
-    cloudbox_limits[2] = i;
+        cloudbox_limits[2] = i;
 
-    // find maximum lat_grid point j with lat_grid[-1]-lat_grid[j]>=LAT_LON_MIN
-    // and j>i
-    Index j = last_lat - 1;
-    while ((j > i) && (lat_grid[last_lat] - lat_grid[j] < LAT_LON_MIN)) j--;
-    ARTS_USER_ERROR_IF (j == i,
+      // find maximum lat_grid point j with lat_grid[-1]-lat_grid[j]>=LAT_LON_MIN
+      // and j>i
+      Index j = last_lat - 1;
+      while ((j > i) && (lat_grid[last_lat] - lat_grid[j] < LAT_LON_MIN)) j--;
+      ARTS_USER_ERROR_IF (j == i,
         "Can not define upper latitude edge of cloudbox:\n"
         "Extend of atmosphere too small. Distance to maximum latitude\n"
         "has to be at least ", LAT_LON_MIN, "deg, but only ",
         lat_grid[last_lat] - lat_grid[j + 1], " available here.")
-    cloudbox_limits[3] = j;
+      cloudbox_limits[3] = j;
+    }
   }
 
   if (atmosphere_dim > 2) {
-    const Numeric latmax = max(abs(lat_grid[cloudbox_limits[2]]),
-                               abs(lat_grid[cloudbox_limits[3]]));
-    const Numeric lfac = 1 / cos(DEG2RAD * latmax);
-    Index last_lon = lon_grid.nelem() - 1;
+    if (fullfull) {
+      cloudbox_limits[4] = 0;
+      cloudbox_limits[5] = lon_grid.nelem() - 1;
+    } else {
+      const Numeric latmax = max(abs(lat_grid[cloudbox_limits[2]]),
+                                 abs(lat_grid[cloudbox_limits[3]]));
+      const Numeric lfac = 1 / cos(DEG2RAD * latmax);
+      Index last_lon = lon_grid.nelem() - 1;
 
-    // find minimum lon_grid point i with lon_grid[i]-lon_grid[0]>=LAT_LON_MIN/lfac
-    Index i = 1;
-    while ((i < last_lon - 1) &&
-           (lon_grid[i] - lon_grid[0] < LAT_LON_MIN / lfac))
-      i++;
-    ARTS_USER_ERROR_IF (i == last_lon - 1,
+      // find minimum lon_grid point i with lon_grid[i]-lon_grid[0]>=LAT_LON_MIN/lfac
+      Index i = 1;
+      while ((i < last_lon - 1) &&
+             (lon_grid[i] - lon_grid[0] < LAT_LON_MIN / lfac))
+        i++;
+      ARTS_USER_ERROR_IF (i == last_lon - 1,
         "Can not define lower longitude edge of cloudbox:\n"
         "Extend of atmosphere too small. Distance to minimum longitude\n"
         "has to be at least ", LAT_LON_MIN / lfac, "deg, but only ",
         lon_grid[i - 1] - lon_grid[0], " available here.")
-    cloudbox_limits[4] = i;
+      cloudbox_limits[4] = i;
 
-    // find maximum lon_grid point j with lon_grid[-1]-lon_grid[j]>=LAT_LON_MIN/lfac
-    // and j>i
-    Index j = last_lon - 1;
-    while ((j > i) && (lon_grid[last_lon] - lon_grid[j] < LAT_LON_MIN / lfac))
-      j--;
-    ARTS_USER_ERROR_IF (j == i,
+      // find maximum lon_grid point j with lon_grid[-1]-lon_grid[j]>=LAT_LON_MIN/lfac
+      // and j>i
+      Index j = last_lon - 1;
+      while ((j > i) && (lon_grid[last_lon] - lon_grid[j] < LAT_LON_MIN / lfac))
+        j--;
+      ARTS_USER_ERROR_IF (j == i,
         "Can not define upper longitude edge of cloudbox:\n"
         "Extend of atmosphere too small. Distance to maximum longitude\n"
         "has to be at least ", LAT_LON_MIN / lfac, "deg, but only ",
         lon_grid[last_lon] - lon_grid[j + 1], " available here.")
-    cloudbox_limits[5] = j;
+    }
   }
 }
 
@@ -895,6 +910,70 @@ void iyInterpCloudboxField(Matrix& iy,
 }
 
 /* Workspace method: Doxygen documentation will be auto-generated */
+void cloudbox_fieldInterp2Azimuth(
+                           Tensor7& cloudbox_field,
+                           const Index& cloudbox_on,
+                           const Vector& aa_grid,
+                           const Numeric& local_los_azimuth_angle,
+                           const Index& aa_interp_order,
+                           const Verbosity&) {
+  //--- Check input -----------------------------------------------------------
+  ARTS_USER_ERROR_IF (!cloudbox_on,
+                     "No need to use this method with cloudbox=0.");
+  ARTS_USER_ERROR_IF (!(aa_interp_order < aa_grid.nelem()),
+                     "Azimuth angle interpolation order *aa_interp_order*"
+                     " must be smaller\n"
+                     "than number of angles in *aa_grid*.");
+  //---------------------------------------------------------------------------
+
+  if (cloudbox_field.nrows()>1 && aa_grid.nelem()==cloudbox_field.nrows()){
+    Index nf = cloudbox_field.nlibraries();
+    Index np = cloudbox_field.nvitrines();
+    Index nla= cloudbox_field.nshelves();
+    Index nlo= cloudbox_field.nbooks();
+    Index nz = cloudbox_field.npages();
+    Index ns = cloudbox_field.ncols();
+
+    const Tensor7 cloudbox_field_in = std::move(cloudbox_field);
+    Numeric azimuth_los = local_los_azimuth_angle;
+
+    //Convert azimuth from -180,180 to 0,360 convention, as aa_grid is defined in 0,360
+    if (azimuth_los<0) azimuth_los+=360;
+
+    cloudbox_field.resize(nf,np,1,1,nz,1,ns);
+
+    // define interpolations compute cyclic for a azimuth grid [0, 360]
+    const auto lag_aa = LagrangeInterpolation(0,
+                                              azimuth_los,
+                                              aa_grid,
+                                              aa_interp_order,
+                                              false,
+                                              Interpolation::GridType::Cyclic,
+                                              {0, 360});
+
+    // Corresponding interpolation weights
+    const auto itw_aa=interpweights(lag_aa);
+
+    for (Index jf = 0; jf < nf; jf++) {
+      for (Index jp = 0; jp < np; jp++) {
+        for (Index jla = 0; jla < nla; jla++) {
+          for (Index jlo = 0; jlo < nlo; jlo++) {
+            for (Index jz = 0; jz < nz; jz++) {
+              for (Index js = 0; js < ns; js++) {
+                cloudbox_field(jf, jp, jla, jlo, jz, 0, js) =
+                    interp(cloudbox_field_in(jf, jp, jla, jlo, jz, joker, js),
+                           itw_aa,
+                           lag_aa);
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+/* Workspace method: Doxygen documentation will be auto-generated */
 void cloudbox_fieldCrop(Tensor7& cloudbox_field,
                         ArrayOfIndex& cloudbox_limits,
                         const Index& atmosphere_dim,
@@ -1123,7 +1202,6 @@ void ScatElementsToabs_speciesAdd(  //WS Output:
     ArrayOfGriddedField3& vmr_field_raw,
     ArrayOfArrayOfSpeciesTag& abs_species,
     Index& propmat_clearsky_agenda_checked,
-    Index& abs_xsec_agenda_checked,
     // WS Input (needed for checking the datafiles):
     const Index& atmosphere_dim,
     const Vector& f_grid,
@@ -1216,7 +1294,6 @@ void ScatElementsToabs_speciesAdd(  //WS Output:
     out2 << "  Append 'particle' field to abs_species\n";
     abs_speciesAdd(abs_species,
                    propmat_clearsky_agenda_checked,
-                   abs_xsec_agenda_checked,
                    species,
                    verbosity);
   }
@@ -1691,10 +1768,10 @@ void pnd_fieldCalcFrompnd_field_raw(  //WS Output:
     ArrayOfGriddedField3 pnd_field_tmp;
 
     GriddedFieldPRegrid(
-        pnd_field_tmp, p_grid_cloud, pnd_field_raw, 1, zeropadding, verbosity);
+        pnd_field_tmp, Vector{p_grid_cloud}, pnd_field_raw, 1, zeropadding, verbosity);
 
     FieldFromGriddedField(pnd_field,
-                          p_grid_cloud,
+                          Vector{p_grid_cloud},
                           pnd_field_tmp[0].get_numeric_grid(1),
                           pnd_field_tmp[0].get_numeric_grid(2),
                           pnd_field_tmp,
